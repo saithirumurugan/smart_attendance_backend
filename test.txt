@@ -1,1 +1,92 @@
-testing123
+How it works (step by step):
+
+Register student:
+Store student name, ID, and face photo in database.
+
+Capture face:
+Camera takes live image/video.
+
+Face detection:
+System finds the face in the image.
+
+Face recognition:
+Compares the face with stored faces.
+
+Mark attendance:
+If matched, attendance is saved automatically.
+
+Store record:
+Save date and time in database.
+
+
+Attendance is taken by looking at your face.
+
+No need to:
+
+Sign in paper
+Tell your name
+Enter roll number
+
+The system itself checks your face and marks attendance
+
+Before using it:
+
+First, teacher must save student face
+That is called face registration.
+
+Uses:
+
+✅ Saves time
+✅ No manual attendance
+✅ Reduces fake attendance
+✅ Easy tracking
+
+1. Python
+
+Main programming language.
+
+Purpose:
+
+Write the full project logic
+Connect camera, database, face recognition
+2. OpenCV
+
+Used for camera and image processing.
+
+Purpose:
+
+Capture face from webcam
+Detect face in image/video
+
+Example:
+Camera ON → OpenCV reads the face.
+
+3. face_recognition
+
+Used to identify whose face it is.
+
+Purpose:
+
+Compare live face with saved faces
+Match the student
+
+Example:
+Checks “Is this Arun’s face?”
+
+4. MySQL
+
+Used to store attendance data.
+
+Stores:
+
+Student name
+Date
+Time
+Attendance status
+5. Google antigravity ide
+
+Used to write and run code.
+
+6. Webcam / Camera
+
+Used to scan faces.
