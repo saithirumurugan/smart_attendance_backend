@@ -94,5 +94,5 @@ Used to scan faces.
 SCENARIOS:
 
  1. Student returns after a long absence
-        if the Student's face is already registered in the database,
-        the system will recognize face and mark the student as present.
+       if the Student's face is already registered in the database,
+       the system will recognize face and mark the student as present.
