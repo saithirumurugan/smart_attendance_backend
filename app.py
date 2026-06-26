@@ -8,9 +8,12 @@ import datetime
 app = Flask(__name__)
 CORS(app)
 
-# Tolerance for mock (OpenCV cosine) mode vs real face_recognition mode
-MOCK_TOLERANCE = 0.30   # cosine distance — tuned for histogram encoding
-REAL_TOLERANCE = 0.58   # euclidean — handles all expressions
+# Tolerance for mock (OpenCV + LBP) mode vs real face_recognition mode.
+# LBP cosine distance: 0.0 = identical person, higher = more different.
+# 0.09 means only accept if the face is at least 91% similar — strict enough
+# to reject different people, lenient enough to handle minor lighting changes.
+MOCK_TOLERANCE = 0.09   # LBP cosine distance — tight to prevent false positives
+REAL_TOLERANCE = 0.45   # euclidean — strict threshold for accurate recognition
 
 try:
     import face_recognition
@@ -34,10 +37,13 @@ def register_student():
 
     if not all([student_id, name, department, face_image]):
         return jsonify({"error": "All fields are required"}), 400
-
-    encoding, error = get_face_encoding_for_registration(face_image)
+        
+    enc, error = get_face_encoding_for_registration(face_image)
     if error:
-        return jsonify({"error": f"Face capture failed: {error}"}), 400
+        return jsonify({"error": error}), 400
+        
+    # Wrap in list to maintain schema compatibility with recent multi-sample changes
+    encodings = [enc]
 
     conn = get_db_connection()
     if not conn:
@@ -51,20 +57,20 @@ def register_student():
         if cursor.fetchone():
             return jsonify({"error": "Student ID already exists"}), 400
 
-        # Check if same face already registered
+        # Check if same face already registered using the first encoding
         cursor.execute("SELECT id, name, face_encoding FROM students")
         existing = cursor.fetchall()
 
         if existing:
             known_encodings = [json.loads(s[2]) for s in existing]
-            match_index, dist = match_face(encoding, known_encodings, tolerance=TOLERANCE)
+            match_index, dist = match_face(encodings[0], known_encodings, tolerance=TOLERANCE)
             if match_index is not None:
                 matched_name = existing[match_index][1]
                 return jsonify({"error": f"Face already registered for '{matched_name}'."}), 400
 
         cursor.execute(
             "INSERT INTO students (id, name, department, face_encoding) VALUES (%s, %s, %s, %s)",
-            (student_id, name, department, json.dumps(encoding))
+            (student_id, name, department, json.dumps(encodings))
         )
         conn.commit()
         print(f"[Register] New student: {name} ({student_id})")
@@ -79,6 +85,25 @@ def register_student():
             conn.close()
 
 
+@app.route('/api/validate_face', methods=['POST'])
+def validate_face():
+    data = request.json
+    face_image = data.get('face_image')
+
+    if not face_image:
+        return jsonify({"error": "No image provided"}), 400
+
+    print("[Validate] Received face image for validation.")
+    encoding, error = get_face_encoding_for_registration(face_image)
+
+    if error:
+        print(f"[Validate] Face capture failed: {error}")
+        return jsonify({"error": error}), 400
+
+    print("[Validate] Face successfully detected and valid.")
+    return jsonify({"message": "Valid"}), 200
+
+
 @app.route('/api/attendance', methods=['POST'])
 def mark_attendance():
     data = request.json
@@ -90,8 +115,19 @@ def mark_attendance():
     encoding, error = get_face_encoding_from_base64(face_image)
 
     if error:
+        print(f"[Attendance] Error: {error}")
+        if "Multiple faces" in error:
+            return jsonify({
+                "status": "Multiple Faces",
+                "message": "Multiple faces detected. Please stand alone."
+            }), 200
+        if "Low lighting" in error:
+            return jsonify({
+                "status": "Low Light",
+                "message": "Low lighting detected. Please move to a brighter area."
+            }), 200
+            
         # No face detected in the frame
-        print(f"[Attendance] No face: {error}")
         return jsonify({
             "status": "No Face",
             "message": "No face detected"
