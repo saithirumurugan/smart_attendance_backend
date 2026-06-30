@@ -11,6 +11,7 @@ try:
 except ImportError:
     FACE_RECOGNITION_AVAILABLE = False
     logging.warning("face_recognition not found. Using OpenCV Haar Cascade fallback.")
+   
 
 # Load OpenCV Haar Cascade for face detection (built into OpenCV, no install needed)
 _cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -44,22 +45,36 @@ def _check_blur(img, threshold=100.0):
     return False, variance
 
 
-def _check_centered(face_location, img_shape):
-    """Check if the face is roughly centered in the image."""
+def _check_centered_and_distance(face_location, img_shape):
+    """Check if the face is roughly centered and at a good distance (not too far)."""
     top, right, bottom, left = face_location
     h, w = img_shape[:2]
     
     face_center_x = (left + right) / 2.0
     face_center_y = (top + bottom) / 2.0
     
-    # Define a center zone (middle 50% of the image)
+    # Center zone (middle 50%)
     margin_x = w * 0.25
     margin_y = h * 0.25
     
-    if (margin_x <= face_center_x <= w - margin_x) and (margin_y <= face_center_y <= h - margin_y):
-        return True
-    return False
+    is_centered = (margin_x <= face_center_x <= w - margin_x) and (margin_y <= face_center_y <= h - margin_y)
+    
+    # Distance check (face width should be at least 15% of image width)
+    face_w = right - left
+    is_good_distance = (face_w / w) > 0.15
+    
+    return is_centered, is_good_distance
 
+def _detect_mask_heuristic(face_crop):
+    """
+    Very basic heuristic for mask detection:
+    A mask typically covers the lower half of the face and has fewer strong edges (if surgical mask) 
+    or high contrast edges (if patterned) compared to a normal mouth/nose area. 
+    This is a fallback; a real DL model is better.
+    """
+    # Just a placeholder for now, returning False to not break the system
+    # without a proper model.
+    return False
 
 def _detect_face_opencv(img):
     """
@@ -209,6 +224,10 @@ def get_face_encoding_from_base64(base64_image):
                 return None, err
             if count > 1:
                 return None, "Multiple faces detected. Please stand alone."
+                
+            if _detect_mask_heuristic(face_crop):
+                return None, "Please remove your mask."
+                
             encoding = _compute_mock_encoding(face_crop)
             return encoding, None
 
@@ -220,6 +239,11 @@ def get_face_encoding_from_base64(base64_image):
 
         if len(face_locations) > 1:
             return None, "Multiple faces detected. Please stand alone."
+            
+        top, right, bottom, left = face_locations[0]
+        face_crop = rgb_img[top:bottom, left:right]
+        if _detect_mask_heuristic(face_crop):
+            return None, "Please remove your mask."
 
         face_encodings = face_recognition.face_encodings(rgb_img, face_locations, num_jitters=1)
         if face_encodings:
@@ -264,10 +288,19 @@ def get_face_encoding_for_registration(base64_image):
                 face_cy = y + h / 2.0
                 margin_x = img_w * 0.25
                 margin_y = img_h * 0.25
-                if not (margin_x <= face_cx <= img_w - margin_x and
-                        margin_y <= face_cy <= img_h - margin_y):
+                
+                is_centered = (margin_x <= face_cx <= img_w - margin_x) and (margin_y <= face_cy <= img_h - margin_y)
+                is_good_distance = (w / img_w) > 0.15
+                
+                if not is_centered:
                     print("[Registration] Face not centered (mock mode).")
                     return None, "Face is not centered. Please align your face in the middle of the camera frame."
+                if not is_good_distance:
+                    return None, "Face is too far away. Please move closer."
+                    
+            if _detect_mask_heuristic(face_crop):
+                return None, "Please remove your mask."
+                
             encoding = _compute_mock_encoding(face_crop)
             return encoding, None
 
@@ -287,9 +320,18 @@ def get_face_encoding_for_registration(base64_image):
             print("[Registration] Error: Multiple faces detected.")
             return None, "Multiple faces detected. Please stand alone."
 
-        if not _check_centered(face_locations[0], img.shape):
+        is_centered, is_good_distance = _check_centered_and_distance(face_locations[0], img.shape)
+        if not is_centered:
             print("[Registration] Error: Face not centered.")
             return None, "Face is not centered. Please align your face in the middle of the camera frame."
+        if not is_good_distance:
+            print("[Registration] Error: Face too far.")
+            return None, "Face is too far away. Please move closer."
+            
+        top, right, bottom, left = face_locations[0]
+        face_crop = rgb_img[top:bottom, left:right]
+        if _detect_mask_heuristic(face_crop):
+            return None, "Please remove your mask."
 
         print("[Registration] Extracting face encodings...")
         face_encodings = face_recognition.face_encodings(rgb_img, face_locations, num_jitters=5)
@@ -364,7 +406,6 @@ def match_face(unknown_encoding, known_encodings, tolerance=0.30):
         for i, enc in enumerate(known_encodings):
             is_multi = isinstance(enc, list) and len(enc) > 0 and isinstance(enc[0], list)
             samples = enc if is_multi else [enc]
-            
             known_np = [np.array(sample) for sample in samples]
             distances = face_recognition.face_distance(known_np, unknown_np)
             

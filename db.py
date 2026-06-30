@@ -58,6 +58,60 @@ def init_db():
             )
         """)
         
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(50) PRIMARY KEY,
+                setting_value VARCHAR(255) NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS holidays (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                holiday_date DATE UNIQUE NOT NULL,
+                description VARCHAR(255)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activity_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                action VARCHAR(100) NOT NULL,
+                details TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS backups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                filename VARCHAR(255) NOT NULL
+            )
+        """)
+        
+        # Seed default admin (password: admin123)
+        # Using werkzeug hash format for simplicity
+        from werkzeug.security import generate_password_hash
+        default_hash = generate_password_hash('admin123')
+        try:
+            cursor.execute("INSERT IGNORE INTO admins (username, password_hash) VALUES (%s, %s)", ('admin', default_hash))
+        except Error as e:
+            pass # Ignore if exists
+
+        # Seed default settings
+        default_settings = [
+            ('class_start_time', '09:00'),
+            ('late_threshold', '09:15'),
+            ('absent_threshold', '09:30')
+        ]
+        for key, val in default_settings:
+            try:
+                cursor.execute("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (%s, %s)", (key, val))
+            except Error as e:
+                pass
+
+        
         connection.commit()
         print("Database initialized successfully.")
     except Error as e:
