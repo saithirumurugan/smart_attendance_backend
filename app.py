@@ -217,16 +217,19 @@ def mark_attendance():
             }), 200
 
         # Calculate Status based on Settings
-        cursor.execute("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('late_threshold')")
+        cursor.execute("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('late_threshold', 'absent_threshold')")
         settings = {row[0]: row[1] for row in cursor.fetchall()}
         
         status = 'Present'
         late_thresh = settings.get('late_threshold', '09:15')
+        absent_thresh = settings.get('absent_threshold', '09:30')
         
         # Simple string comparison works for HH:MM format
         current_hm = now.strftime('%H:%M')
-        if current_hm > late_thresh:
-            status = 'Late'
+        if current_hm > absent_thresh:
+            status = 'Absent'
+        elif current_hm > late_thresh:
+            status = 'Late Present'
 
         # Insert attendance
         cursor.execute(
@@ -239,6 +242,7 @@ def mark_attendance():
 
         return jsonify({
             "status": "Success",
+            "attendance_status": status,
             "student_id": student_id,
             "name": name,
             "time": time_str,
@@ -315,7 +319,7 @@ def get_dashboard_stats():
         cursor.execute("SELECT COUNT(*) FROM attendance WHERE date = %s AND status = 'Present'", (date_str,))
         present_students = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM attendance WHERE date = %s AND status = 'Late'", (date_str,))
+        cursor.execute("SELECT COUNT(*) FROM attendance WHERE date = %s AND status IN ('Late', 'Late Present')", (date_str,))
         late_students = cursor.fetchone()[0]
 
         absent_students = total_students - (present_students + late_students)
